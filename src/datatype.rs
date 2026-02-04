@@ -159,7 +159,16 @@ impl DataType for Data {
     fn as_i64(&self) -> Option<i64> {
         match self {
             Data::Int(v) => Some(*v),
-            Data::Float(v) => Some(*v as i64),
+            Data::Float(v) => {
+                if v.is_finite()
+                    && *v >= i64::MIN as f64
+                    && *v <= i64::MAX as f64 
+                {
+                    Some(*v as i64)
+                } else {
+                    None
+                }
+            },
             Data::Bool(v) => Some(*v as i64),
             Data::String(v) => atoi_simd::parse::<i64>(v.as_bytes()).ok(),
             _ => None,
@@ -471,7 +480,16 @@ impl DataType for DataRef<'_> {
     fn as_i64(&self) -> Option<i64> {
         match self {
             DataRef::Int(v) => Some(*v),
-            DataRef::Float(v) => Some(*v as i64),
+            DataRef::Float(v) => {
+                if v.is_finite()
+                    && *v >= i64::MIN as f64
+                    && *v <= i64::MAX as f64 
+                {
+                    Some(*v as i64)
+                } else {
+                    None
+                }
+            },
             DataRef::Bool(v) => Some(*v as i64),
             DataRef::String(v) => atoi_simd::parse::<i64>(v.as_bytes()).ok(),
             DataRef::SharedString(v) => atoi_simd::parse::<i64>(v.as_bytes()).ok(),
@@ -1084,6 +1102,67 @@ mod tests {
         assert_eq!(DataRef::Bool(false).as_i64(), Some(0));
     }
 
+    #[test]
+    fn test_as_i64_with_floats() {
+        assert_eq!(Data::Float(100.7).as_i64(), Some(100));
+        assert_eq!(DataRef::Float(100.7).as_i64(), Some(100));
+
+        assert_eq!(Data::Float(100.0).as_i64(), Some(100));
+        assert_eq!(DataRef::Float(100.0).as_i64(), Some(100));
+
+        assert_eq!(Data::Float(-42.3).as_i64(), Some(-42));
+        assert_eq!(DataRef::Float(-42.3).as_i64(), Some(-42));
+
+        assert_eq!(Data::Float(0.0).as_i64(), Some(0));
+        assert_eq!(DataRef::Float(0.0).as_i64(), Some(0));
+
+        assert_eq!(Data::Float(0.999999).as_i64(), Some(0));
+        assert_eq!(DataRef::Float(0.999999).as_i64(), Some(0));
+
+        // Near integers
+        assert_eq!(Data::Float(1.0000000000000002).as_i64(), Some(1));
+        assert_eq!(DataRef::Float(1.0000000000000002).as_i64(), Some(1));
+
+        // Just inside i64::MAX
+        assert_eq!(Data::Float(i64::MAX as f64).as_i64(), Some(i64::MAX));
+        assert_eq!(DataRef::Float(i64::MAX as f64).as_i64(), Some(i64::MAX));
+
+        assert_eq!(Data::Float(i64::MIN as f64).as_i64(), Some(i64::MIN));
+        assert_eq!(DataRef::Float(i64::MIN as f64).as_i64(), Some(i64::MIN));
+
+        assert_eq!(Data::Float(9_223_372_036_854_775_808.0).as_i64(), Some(i64::MAX)); // just over MAX
+        assert_eq!(DataRef::Float(9_223_372_036_854_775_808.0).as_i64(), Some(i64::MAX));
+
+        assert_eq!(Data::Float(1e20).as_i64(), None);
+        assert_eq!(DataRef::Float(1e20).as_i64(), None);
+
+        assert_eq!(Data::Float(1e100).as_i64(), None);
+        assert_eq!(DataRef::Float(1e100).as_i64(), None);
+
+        // Negative out of range
+        assert_eq!(Data::Float(-1e20).as_i64(), None);
+        assert_eq!(DataRef::Float(-1e20).as_i64(), None);
+
+        // Non-finite values
+        assert_eq!(Data::Float(f64::INFINITY).as_i64(), None);
+        assert_eq!(DataRef::Float(f64::INFINITY).as_i64(), None);
+
+        assert_eq!(Data::Float(f64::NEG_INFINITY).as_i64(), None);
+        assert_eq!(DataRef::Float(f64::NEG_INFINITY).as_i64(), None);
+
+        assert_eq!(Data::Float(f64::NAN).as_i64(), None);
+        assert_eq!(DataRef::Float(f64::NAN).as_i64(), None);
+
+        // Very small fractional values
+        assert_eq!(Data::Float(1e-10).as_i64(), Some(0));
+        assert_eq!(DataRef::Float(1e-10).as_i64(), Some(0));
+
+        assert_eq!(Data::Float(-1e-10).as_i64(), Some(0));
+        assert_eq!(DataRef::Float(-1e-10).as_i64(), Some(0));
+
+        assert_eq!(Data::Float(1.00E+100).as_i64(), None);
+        assert_eq!(DataRef::Float(1.00E+100).as_i64(), None);
+    }
     #[test]
     fn test_as_f64_with_bools() {
         assert_eq!(Data::Bool(true).as_f64(), Some(1.0));
